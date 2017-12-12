@@ -114,7 +114,33 @@ map.set(['a'], 555);
 map.get(['a']); // undifined
 // 表面是针对同一个键，但实际上这是两个值，内存地址不一样
 ```
+>Map的属性方法
+>1、size属性：返回Mao结构的成员数量
+>2、set方法：set（key，value）
+>3、get方法：get（key）返回key
+>4、has方法：has（key）键是否在Map中
+>5、delete方法：delete（key）删除键返回布尔
+>6、clear方法：clear（）清除所有成员
+>7、keys（）、values（）、entries（）、forEach（）遍历方法
 
+>Map转化为其他数据结构
+>1、数组
+>=>数组：...扩展运算符[...map]
+>数组=>：数组直接传入Map
+>2、对象
+>=>对象：Map所有键都是字符串
+>```javascript
+>let obj = Object.creat(null);
+>for(let [k, v] of xxx]){
+>  obj[k] = v;
+>}
+>```
+>对象=>：
+>```javascript
+>for(let k of Object.key(obj)){
+>  map.set(k, obj[k]);
+>}
+>```
 
 
 
