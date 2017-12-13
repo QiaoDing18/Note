@@ -98,12 +98,18 @@ forEach方法本身的参数就是一个处理函数，处理函数参数依次�
 ## Map
 Map结构的目的和基本用法：JS的对象本质上是键值对的集合（Hash结构），但是只能用字符串作为键。这给它的使用带来了很大的限制。比如[Object Object]
 Map数据结构类似于对象，也是键值对的集合，但是“键”的范围不限于字符串，各种类型的值(包括对象)都可以当作键。也就是说，Object结构提供了“字符串—值”的对应，Map结构提供了“值—值”的对应，是一种更为完善的Hash结构实现。
-1、作为构造函数，Map也可以接受一个数组作为参数。该数组的成员是一个个表示键值对的数组。
+1、作为构造函数，Map也可以接受一个数组作为参数。该数组的成员是一个个表示键值对的数组
+
 2、Map构造函数接受数组作为参数，实际上执行的是把key和value通过forEach，set进Map结构中
+
 3、如果对同一个键多次赋值，后面的值将覆盖前面的值
+
 4、如果读取一个未知的键，则返回undefined
+
 5、只有对同一个对象的引用，Map结构才将其视为同一个键
+
 6、Map的键实际上是跟内存地址绑定的，只要内存地址不一样，就视为两个键（解决了同属性名碰撞问题，扩展别人库时，使用对象作为键名就不用担心同名问题）
+
 7、如果Map的键是一个简单类型的值（数字、字符串、布尔值），则只需要两个值严格相等，Map就将其视为一个键，包括0和-0。且NaN虽然不严格等于自身，但Map将其视为同一个键
 
 相关代码：
@@ -124,71 +130,37 @@ map.get(['a']); // undifined
 >7、keys（）、values（）、entries（）、forEach（）遍历方法
 
 >Map转化为其他数据结构
->1、数组
->=>数组：...扩展运算符[...map]
->数组=>：数组直接传入Map
->2、对象
->=>对象：Map所有键都是字符串
+>#### 1、数组
+>Map=>数组：...扩展运算符[...map]
+>数组=>Map：数组直接传入Map
+>#### 2、对象
+>Map=>对象：Map所有键都是字符串
 >```javascript
 >let obj = Object.creat(null);
 >for(let [k, v] of xxx]){
 >  obj[k] = v;
 >}
 >```
->对象=>：
+>对象=>Map：
 >```javascript
 >for(let k of Object.key(obj)){
 >  map.set(k, obj[k]);
 >}
 >```
+>#### 3、JSON
+>Map=>JSON
+>```javascript
+>fucntion strMapToJSON(strMap){
+>  return JSON.stringify([strMapToJSON(strMap)]);//键名是字符串
+>  return JSON.stringify([...map]);//键名非字符串
+>}
+>```
+>JSON=>Map
+>```javascript
+>function jsonToStrMap(jsonstr){
+>  return objToStrMap(JSON.parse(jsonstr));
+>}
+>```
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+### WeakMap
+与Map类似，区别：只接受对象作为键名（null除外），而且键名所指向的对象不计入垃圾回收机制
