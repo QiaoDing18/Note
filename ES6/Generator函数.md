@@ -144,7 +144,7 @@ Generator函数是ES6对协程的实现，但属于不完全实现。Generator�
 ## 应用
 Generator可以暂停函数执行，返回任意表达式的值。这种特点使得Generator有多种应用场景。
 
-#### 异步操作的同步化表达
+#### 1、异步操作的同步化表达
 Generator函数的暂停执行效果，意味着可以把异步操作卸载yield语句里面，等到调用next方法时再执行。所以，Generator函数的一个重要实际意义就是用于**处理异步操作，改写回调函数**
 ```javascript
 function* loadUI () {
@@ -178,3 +178,120 @@ it.next();
 上面的main函数就是通过AJAX操作获取数据。可以看到，除了多了一个yield，它几乎与同步操作的写法一模一样。注意，makeAjaxCall函数中的next方法必须加上response参数，因为yield语句构成的表达式本身是没有值的，总是等于undefined。
 
 通过Generator实现的逐行读取文本文件。
+```javascript
+function* numbers(){
+	let file = new FileReader("numbers.txt");
+	try{
+		while(!file.eof){
+			yield parseInt(file.readLine(), 10);
+		}
+	}finally{
+		file.close();
+	}
+}
+```
+上面代码可以使用yield手动逐行读取文件
+
+#### 2、控制流管理
+如果有一个多步操作非常耗时，采用回调函数可能会写成这样。。
+```javascript
+step1(function(value1){
+	step2(value1, function(value2){
+		step3(value2, function(value3){
+			step4(value3, function(value4){
+				// Do something with value4
+			})
+		})
+	})
+});
+```
+采用Promise改写上面的代码如下
+```javascript
+Q.fcall(step1)
+  .then(step2)
+  .then(step3)
+  .then(step4)
+  .then(function(value4){
+  		//Do something with value4
+  }, function (error) {
+  		// Handle any error from step1 through step4
+  })
+  .done();
+```
+上面代码把回调函数改成了直线执行的形式，但是加入了大量Promise的语法
+Generator函数可以进一步改善代码运行流程
+```javascript
+function* longRunningTask(){
+	try {
+		var value1 = yield step1();
+		var value2 = yield step2(value1);
+		var value3 = yield step2(value2);
+		var value4 = yield step2(value3);
+		// do something with value4
+	}catch(e){
+		// handle any err
+	}
+}
+```
+然后使用一个函数按次序自动执行所有步骤
+```javascript
+scheduler(longRunningTask());
+
+function scheduler(task){
+	setTimeout(function(){
+		var taskObj = task.next(task.value);
+		// 如果Generator函数未结束，就继续调用
+		if(!taskObj.done){
+			task.value = taskObj.value
+			scheduler(task);
+		}
+	}, 0);
+}
+```
+yield语句是同步运行，不是异步运行（否则失去取代回调函数的设计目的）
+多个任务按顺序一个接一个执行时，yield语句可以按顺序排列。多个任务需要并列执行时（比如只有当任务A和任务B都执行完时才能执行C），可以采用数组的写法。
+```javascript
+function* parallelDownloads(){
+	let [ text1, text2 ] = yield [
+		taskA();
+		taskB();
+	];
+	console.log(text1, text2);
+}
+```
+上面的代码中，yield语句的参数是一个数组，成员就是两个任务——taskA和taskB，只有等这两个任务都完成，才会接着执行下面的语句
+
+#### 3、部署Iterator接口
+利用Generator函数可以在任意对象上部署Iterator接口。
+```javascript
+function* iterEntries(obj){
+	let keys = Object.keys(obj);
+	for(let i=0; i<keys.length; i++){
+		let key = key[i];
+		yield [key, obj[key]];
+	}
+}
+let myObj = {foo: 3, bar: 7};
+for(let [key, value] of iterEntries(myObj)){
+	console.log(key, value);
+}
+// foo 3  bar 7
+```
+代码中，myObj是一个普通对象，通过iterEntries函数就有了Iterator接口。也就是说，可以在任意对象上部署next方法。
+
+#### 4、作为数据结构
+Generator可以看作数据结构，因为Generator函数可以返回一系列的值，这意味着它可以对任意表达式提供类似数组的接口。
+```javascript
+function *doStuff(){
+	yield fs.readFile.bind(null, 'xx.txt');
+	yield fs.readFile.bind(null, 'oo.txt');
+	yield fs.readFile.bind(null, 'zz.txt');
+}
+```
+上面代码一次返回三个函数，但是由于使用了Generator函数，导致可以像处理数组那样处理这三个返回的函数
+```javascript
+for(task of doStuff()){
+	//task是一个函数，可以像回调函数那样使用它
+}
+```
+Generator使得数据或者操作具备了类似数组的接口
