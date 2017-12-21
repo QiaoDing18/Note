@@ -342,3 +342,171 @@ Promise.all(promises).then(function (posts) {
   // ...
 });
 ```
+```javascript
+const databasePromise = connectDatabase();
+
+const booksPromise = databasePromise
+  .then(findAllBooks);
+
+const userPromise = databasePromise
+  .then(getCurrentUser);
+
+Promise.all([
+  booksPromise,
+  userPromise
+])
+.then(([books, user]) => pickTopRecommentations(books, user));
+```
+上面代码中，booksPromise和userPromise是两个异步操作，只有等到它们的结果都返回了，才会触发pickTopRecommentations这个回调函数。
+
+注意，如果作为参数的 Promise 实例，自己定义了catch方法，那么它一旦被rejected，并不会触发Promise.all()的catch方法。
+```javascript
+const p1 = new Promise((resolve, reject) => {
+  resolve('hello');
+})
+.then(result => result)
+.catch(e => e);
+
+const p2 = new Promise((resolve, reject) => {
+  throw new Error('报错了');
+})
+.then(result => result)
+.catch(e => e);
+
+Promise.all([p1, p2])
+.then(result => console.log(result))
+.catch(e => console.log(e));
+// ["hello", Error: 报错了]
+```
+上面代码中，p1会resolved，p2首先会rejected，但是p2有自己的catch方法，该方法返回的是一个新的 Promise 实例，p2指向的实际上是这个实例。该实例执行完catch方法后，也会变成resolved，导致Promise.all()方法参数里面的两个实例都会resolved，因此会调用then方法指定的回调函数，而不会调用catch方法指定的回调函数。
+
+如果p2没有自己的catch方法，就会调用Promise.all()的catch方法。
+```javascript
+const p1 = new Promise((resolve, reject) => {
+  resolve('hello');
+})
+.then(result => result);
+
+const p2 = new Promise((resolve, reject) => {
+  throw new Error('报错了');
+})
+.then(result => result);
+
+Promise.all([p1, p2])
+.then(result => console.log(result))
+.catch(e => console.log(e));
+// Error: 报错了
+```
+
+## Promise.race()
+Promise.race方法同样是将多个Promise实例包装成一个新的Promise实例
+```javascript
+var p = Promise.race([p1, p2, p3])
+```
+上面代码中，只要p1、p2、p3中有一个实例率先改变状态，p的状态就跟着改变。哪个率先改变的Promise实例的返回值，就传递给p的回调函数。
+
+Promise.race方法的参数和Promise.all方法一样，如果不是Promise实例，就会先调用Promise.resolve方法，将参数转为Promise实例，再进一步处理
+
+如果指定时间内没有获得结果，就将Promise的状态变为Rejected，否则变为Resolved
+```javascript
+var p = Promise.race([
+	fetch('/that-a-while'),
+	new Promise(function(resolve, reject){
+		setTimeout(() => reject(new Error('request timeout')), 5000)
+	})
+])
+p.then(respones => console.log(response))
+p.catch(error => console.log(error))
+```
+上面的代码中，如果5秒之内fetch方法无法返回结果，变量p的状态就会变为Rejected，从而触发catch方法指定的回调函数
+
+## Promise.resolve()
+**有时需要将现有对象转为Promise对象，Promise.resolve方法就起到这个作用**
+```javascript
+var jsPromise = Promise.resolve($.ajax('/whatever.json'));
+```
+代码将jQuery生成的deferred对象转为新的Promise对象
+Promise.resolve等价于下面的写法
+```javascript
+Promise.resolve("foo")
+// 等价于
+new Promise(resolve => resolve('foo'))
+```
+如果Promise.resolve方法的参数不是具有then方法的对象，则返回一个新的Promise对象，且其状态为Resolved。
+```javascript
+var p = Promise.resolve('Hello');
+p.then(function(s){
+	console.log(s)
+});
+// hello
+```
+上面的代码生成了一个新的Promise对象的实例p。由于字符串“hello”不属于异步操作（判断方法是它不是具有then方法的对象），返回Promise实例的状态从一生成就是Resolved，所以回调函数就会立即执行。Promise.resolve方法的参数会同时传给回调函数。
+Promise.resolve方法允许调用时不带参数。所以，如果希望得到一个Promise对象，比较方便的方法就是直接调用Promise.resolve方法。
+```javascript
+var p = Promise.resolve();
+p.then(function(){
+	// ...
+})
+```
+上面的变量p就是一个Promise对象
+如果Promise.resolve方法的参数是一个Promise实例，则会被原封不动地返回。
+
+
+## Promise.reject()
+Promise.reject(reason)方法也会返回一个新的Promise实例，状态为Rejected。Promise.reject方法的参数reason会被传递给实例的回调函数。
+```javascript
+var p = Promise.reject('err');
+//等同于
+var p = new Promise((resolve, reject) => reject('foo'))
+p.then(null, function(s){
+	console.log(s)
+});
+//err
+```
+代码生成一个Promise对象的实例p，状态为Rejected，回调函数会立即执行。
+
+## 附加done和finally
+### done()
+Promise对象的回调链，不管以then方法还是catch方法结尾，要是最后一个方法抛出错误都有可能无法捕捉到（因为Promise内部错误不会冒泡到全局）。done方法放在回调链的尾端，保证抛出任何可能出现的错误
+```javascript
+asyncFunc()
+	.then(f1)
+	.catch(r1)
+	.then(f2)
+	.done();
+```
+
+实现代码：
+```javascript
+Promise.prototype.done = function(onFulfilled, onRejected){
+	this.then(onFulfilled, onRejected)
+		.catch(function(reason){
+			// 抛出全局错误
+			setTomeout(() => { throw reason }, 0);
+		})
+}
+```
+done方法可以像then方法那样用，提供Fulfilled和Rejected状态的回调函数
+，也可以不提供任何参数。但不管怎样，done方法都会捕捉到任何可能出现的错误，并向全局抛出。
+
+### finally()
+finally方法用于指定不管Promise对象最后状态如何都会执行的操作。它与done方法的最大区别在于，它接受一个普通的回调函数作为参数，然后使用finally方法关掉服务器。
+下例，服务器使用Promise处理请求，然后使用finally方法关掉服务器。
+```javascript
+server.listen(0)
+	.then(function(){
+		// run test
+	})
+	.finally(server.stop)
+```
+finally实现
+```javascript
+Promise.prototype.finally = function(callback){
+	let p = this.constructor;
+	return this.then(
+		value  => p.resolve(callback().then(() => value))
+		reason => p.resolve(callback().then(() => { throw reason }))
+	);
+}
+```
+上面的代码中，不管前面的Promise是Fulfilled还是Rejected，都会执行回调函数callback。
