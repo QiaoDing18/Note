@@ -37,6 +37,184 @@ fs.readFile('xxoo', function(err, data){
 回调函数本身并没有问题，问题出在多重嵌套，会出现回调函数地狱
 Promise就是为了解决这个问题而提出的。它不是新的语法功能，而是一个新的写法，允许将回调函数的横向加载改成纵向加载。采用Promise，连续读取多个文件的写法如下：
 ```javascript
-
+var readFile = require('fs-readFile-promise');
+readFile(fileA)
+.then(function(data){
+	console.log(data.toString);
+})
+.then(function(){
+	return readFile(fileB);
+})
+.then(function(data){
+	console.log(data.toString());
+})
+.then(function(err){
+	console.log(err);
+});
 ```
+上面的代码中使用了fs-readfile-promise模块，其作用是返回一个Promise版本的readFile函数。Promise提供then方法加载回调函数，catch方法捕捉执行过程中抛出的错误。
 
+Promise的最大问题是代码冗余，原来的任务被Promise包装了一下，不管什么操作，一眼看去都是一堆then，原来语义变得不是很清楚
+有木有更嗨的写法呢？
+
+## Generator函数
+#### 协程
+传统的编程语言早已有异步编程的解决方案（尤其是多任务的解决方案）。其中有一种叫做“协程”，意思是多个线程互相协作，完成异步任务。
+协程有点像函数，又有点像线程。其运行流程大致如下。
+* 1、协程A开始执行
+* 2、协程A执行到一半，暂停，执行权转移到协程B
+* 3、（一段时间后）协程B交还执行权
+* 4、协程A恢复执行
+上面的协程A就是异步任务，因为它分成两段执行。
+举例来说，读取文件的协程写法如下。
+```javascript
+fucntion asyncJob() {
+	// ...其他代码
+	var f = yield readFile(fileA);
+	// ...其他代码
+}
+```
+上面的函数asyncJob是一个协程，他的奥妙在于其中的yield。他表示执行到此处执行权将交给其他协程。也就是说，yield命令是异步两个阶段的分界线。
+协程遇到yield命令就暂停，等到执行权返回，再从暂停的地方继续往后执行。他的最大优点就是代码的写法非常像同步操作，如果去除yield命令，则完全一样。
+
+#### Generator函数的概念
+Generator函数是协程在ES6中的实现，最大的特点就是可以交出函数的执行权（即暂停执行）。
+整个Generator函数就是一个封装的异步任务，或者说是异步任务的容器。异步操作需要暂停的地方，都用yield语句注明。Generator函数的执行方法如下。
+```javascript
+function* gen(x){
+	var y = yield x + 2;
+	return y;
+}
+var g = gen(1);
+g.next()// {value: 3,         done: false}
+g.next()// {value: undefined, done: true}
+```
+上面的代码中，调用Generator函数会返回一个内部指针（及遍历器）g。这是Generator函数不同于普通函数的另一个地方，即执行它不会返回结果，返回的是指针对象。调用指针g的next方法，会移动内部指针（即执行异步任务的第一段），指向第一个遇到的yield语句，上例中是到 x + 2为止。
+换言之，next方法的作用是分阶段执行Generator函数。每次调用next方法，会返回一个对象，表示当前阶段的信息（value属性和done属性）。value属性是yield语句后表达式的值，表示当前阶段的值；done属性是一个布尔值，表示Generator函数是否执行完毕，即是否还有下一个阶段。
+
+#### Generator函数的数据交换和错误处理
+Generator函数可以暂停执行和恢复执行，这是它能封装异步任务的根本原因。除此之外它还有两个特性使它可作为异步编程的完整解决方案：函数体内外的数据交换和错误处理机制。
+next方法返回值的value属性，是Generator函数向外输出数据；next方法还可以接受参数，这是向Generator函数体内输入数据。
+```javascript
+function* gen(x){
+	var y = yield x + 2;
+	return y;
+}
+var g = gen(1);
+g.next()  // { value: 3, done: false }
+g.next(2) // { value: 2, done: true }
+```
+第二个next参数2，这个参数可以传入Generator函数，作为上个阶段异步任务的返回结果被函数体内的变量y接收。因此，这一步的value属性返回的就是2（变量y的值）。
+Generator函数内部还可以部署错误处理代码，捕获函数体外抛出的错误。
+```javascript
+function* gen(x){
+	try{
+		var y = yield x + 2;
+	}catch(e){
+		console.log(e);
+	}
+	return y;
+}
+var g = gen(1);
+g.next();
+g.throw('出错了');
+// 出错了
+```
+上面的最后一行，Generator函数体外使用指针对象的throw方法抛出的错误，可以被函数体内的try...catch代码块捕获。这意味着，出错的代码与处理错误的代码实现了时间和空间上的分离，这对于异步编程来说无疑是很重要的。
+
+#### 异步任务的封装
+如何使用Generator函数执行一个真实的异步任务
+```javascript
+var fetch = require('node-fetch');
+function* gen(){
+	var url = "https://xxoo";
+	var result = yield fetch(url);
+	console.log(result.xxoo);
+}
+```
+Generator函数封装了一个异步操作，先读取一个远程接口，然后从JSON格式的数据解析信息。就像前面说的，这段代码非常像同步操作，只是加上了yield命令。
+
+执行方法如下
+```javascript
+var g = gen();
+var result = g.next();
+
+result.value.then(function(data){
+	return data.json();
+}).then(function(data){
+	g.next(data);
+})
+```
+首先执行Generator函数获取遍历器对象，然后使用next方法（第二行）执行异步任务的第一阶段。由于Fetch模块返回的是一个Promise对象，因此要用then方法调用下一个next方法。
+可以看到，虽然Generator函数将异步操作表示得很简洁，但是流程管理（即何时执行第一阶段，何时执行第二阶段）却不方便。
+
+## Thunk函数
+#### 参数的求值策略
+```javascript
+var x = 1;
+function f(m){
+	return m * 2;
+}
+f(x + 5)  // 12
+```
+1、先定义函数f
+2、然后向他传入表达式x+5
+f(x + 5)传值调用时等同于f(6)
+
+**“传值调用”**
+进入函数体前就计算x+5的值，再将这个值传入函数f。
+
+**“传名调用”**
+直接将表达式x+5传入函数体，只在用到它时求值。
+
+#### Thunk函数的含义
+编译器的“传名调用”实现往往是先将参数放到一个临时函数中，再将这个临时函数传入函数体。这个临时函数就叫做Thunk函数。
+```javascript
+function f(m){
+	return m * 2;
+}
+f(x + 5);
+//等同于
+var thunk = function(){
+	return x + 5;
+};
+function f(thunk){
+	return thunk() * 2;
+}
+```
+代码中，函数f的参数x+5被一个函数替换了。凡是用到原参数的地方，对Thunk函数求值即可。这就是Thunk函数的定义，他是“传名调用”的一种实现策略，用来替换某个表达式。
+
+#### JS语言的Thunk函数
+JS是传值调用，他的Thunk函数含义有所不同。在JS语言中，Thunk函数替换的不是表达式，而是多参数函数，它将其替换成单参数的版本，且只接受回调函数作为函数。
+```javascript
+// 正常的readFile 多参数
+fs.readFile(fileName, callback);
+
+// Thunk版本的readFile 单参数
+var readFileThunk = Thunk(fileName);
+readFileThunk(callback);
+var Thunk = function(fileName){
+	return function(callback){
+		return fs.readFile(fileName, callback);
+	};
+};
+```
+代码中，fs模块的readFile方法是一个多参数函数，两个参数分别为文件名和回调函数。经过转换器处理，它变成了一个单参数函数，只接受回调函数作为参数。这个单参数版本，就叫做Thunk函数。
+
+任何函数，**只要参数有回调函数，就能写成Thunk函数的形式**。下面是一个简单的Thunk函数转换器。
+```javascript
+var Thunk = function(fn){
+	return function(){
+		var args = Array.prototype.slice.call(arguments);
+		return function(callback){
+			args.push(callback);
+			return fn.apply(this, args);
+		}
+	};
+};
+```
+使用上面转换器生成fs.readFile的Thunk函数如下
+```javascript
+var readFileThunk = Thunk(fs.readFile);
+readFileThunk(fileA)(callback);
+```
