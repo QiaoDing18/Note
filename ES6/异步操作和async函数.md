@@ -218,3 +218,123 @@ var Thunk = function(fn){
 var readFileThunk = Thunk(fs.readFile);
 readFileThunk(fileA)(callback);
 ```
+
+#### Thunkify模块
+用于**生产环节**的转换器，建议使用Thunkify模块
+用法：
+```javascript
+var thunkify = require('thunkify');
+var fs = require('fs');
+var read = thunkify(fs.readFile);
+read('package.json')(function(err, str){
+	// .....
+});
+```
+
+#### Generator函数的流程管理
+Thunk函数可以用于Generator函数的自动流程管理。
+读取文件为例，下面的Generator函数封装了两个异步操作。
+```javascript
+var fs = require('fs');
+var thunkify = require('thunkify');
+var readFile = thunkify(fs.readFile);
+var gen = function* (){
+	var r1 = yield readFile('xx');
+	console.log(r1.toString());
+	var r2 = yield readFile('oo');
+	console.log(r2.toString());
+};
+```
+代码中，yield命令用于将程序的执行权移出Generator函数。就需要一种方法，将执行权再交还给Generator函数。
+
+#### Thunk函数的自动流程管理
+Thunk函数真正的威力在于可以自动执行Generator函数。下面就是一个基于Thunk函数的Generator执行器
+```javascript
+function run(fn){
+	var gen = fn();
+	function next(err, data){
+		var result = gen.next(data); // 先next
+		if(result.done){   // 判断结束
+			return;
+		}
+		result.value(next); // 没结束 next函数传入Thunk函数
+	}
+	next();  // 递归执行
+}
+run(gen);
+```
+上面的run函数就是一个Generator函数的自动执行器。内部的next函数就是Thunk的回调函数。next函数先将指针移到Generator函数的下一步（gen.next方法），然后判断Generator函数是否结束（result.done属性），如果没有结束，就将next函数再传入Thunk函数（result.value属性），否则直接退出。
+
+有了这个执行器，执行Generator函数就方便多了。不管有多少个异步操作，直接传入run函数即可。当然，前提是每一个异步操作都要是Thunk函数。也就是说，跟yield命令后面的必须是Thunk函数。
+```javascript
+var gen = function* (){
+	var f1 = yield readFile('fileA');
+	var f2 = yield readFile('fileB');
+	// ...
+	var fn = yield readFile('fileN');
+};
+run(gen);
+```
+上面的代码中，函数gen封装了n个异步的读取文件操作，只要执行run函数，这些操作就会自动完成。这样一来，异步操作不仅可以写的像同步操作，而且一行代码就可以执行。
+Thunk函数并不是Generator函数自动执行的唯一方案。因为自动执行的关键是，必须有一种机制自动控制Generator函数的流程，接收和交换程序的执行权。回调函数可以做到这一点，Promise对象也可以做到这一点。
+
+## co模块
+co模块用于Generator函数的自动执行。
+```javascript
+var gen = function* (){
+	var f1 = yield readFile('xx');
+	var f2 = yield readFile('oo');
+	console.log(f1.toString());
+	console.log(f2.toString());
+};
+```
+co模块可以让你不用编写Generator函数的执行权
+```javascript
+var co = require('co');
+co(gen);
+```
+上面的代码中，Generator函数只要传入co函数就会自动执行。
+co函数返回一个Promise对象，因此可以用then方法添加回调函数。
+```javascript
+co(gen).then(function(){
+	console.log('Generator函数执行完成');
+})
+```
+上面的代码中，等到Generator函数执行结束，就会输出一行提示。
+
+## async函数
+#### 含义
+ES7提供了async函数，使得异步操作变得更加方便。async函数是什么？一句话，async函数就是Generator函数的语法糖。
+Generator函数，依次读两个文件
+```javascript
+var fs = require('fs')
+var readFile = function(fileName){
+	return new Promise(function (resolve, reject){
+		fs.readFile(fileName, function(error, data){
+			if(error){
+				reject(error);
+			}
+			resolve(data)
+		});
+	});
+};
+var gen = function* (){
+	var f1 = yield readFile('xx');
+	var f2 = yield readFile('oo');
+	console.log(f1.toSrting());
+	console.log(f2.toSrting());
+}
+
+// 写成async函数如下
+var asyncReadFile = async function(){
+	var f1 = await readFile('xx');
+	var f2 = await readFile('oo');
+	console.log(f1.toString());
+	console.log(f2.toString());
+}
+```
+比较会发现，async函数就是将Generator函数的星号替换成async，将yield替换成await，仅此而已。
+async函数对Generator函数的改进体现在以下4点。
+1、内置执行器。Generator函数的执行必须靠执行器，所以才有co模块，而async函数自带执行器。也就是说，async函数的执行与普通函数一模一样，只要一行
+var result = asyncReadFile();
+2、上面代码调用了asyncReadFile函数，然后它就会自动执行，输出最后结果。完全不像Generator函数
