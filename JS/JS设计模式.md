@@ -44,4 +44,68 @@ var singleton = (function(){
 })();
 singleton.getInstance().publicMethod();
 ```
+## 观察者模式
+又叫做观察者模式。一个发布一个订阅
+#### 优点：
+1、支持简单的广播通信，当对象状态发生改变时，会自动通知已经订阅过的对象
+2、发布者与订阅者耦合性降低，发布者只管发布一条消息出去，它不关心这条消息如何被订阅者使用，同时，订阅者只监听发布者的事件名，只要发布者的事件名不变，它不管发布者如何改变
+#### 缺点：
+1、创建创建订阅者需要消耗时间和内存
+2、过度使用使维护性低
+#### 实现
+1、想好谁是发布者
+2、在发布者中添加一个缓存列表，用来存放回调函数来通知订阅者
+3、发布消息，发布者遍历缓存列表，依次触发存放的回调函数
+```javascript
+// 封装一个
+    var Event = (function(){
+      var list = {};
+      
+      var listen = function(key, fn){
+        if(!list[key]){
+          list[key] = [];
+        }
+        list[key].push(fn);
+      };
 
+      var trigger = function(){
+        var key = Array.prototype.shift.call(arguments);
+        var fns = list[key];
+        if(!fns || fns.length === 0){
+          return false;
+        }
+        for(var i=0, fn; fn=fns[i]; i++){
+          fn.apply(this, arguments);
+        }
+      };
+
+      var remove = function(key, fn){
+        var fns = list[key];
+        if(!fns){
+          return false;
+        }
+        if(!fn){
+          fns && (fns.length = 0);
+        }else{
+          for(var i=fns.length-1; i>=0; i--){
+            var _fn = fns[i];
+            if(_fn === fn){
+              fns.splice(i, 1);
+            }
+          }
+        }
+      };
+
+      return {
+        listen: listen,
+        trigger: trigger,
+        remove: remove
+      }
+    })();
+
+    // 测试代码
+    Event.listen("color", function(size){
+      console.log("尺码为："+size);
+    });
+    Event.trigger("color", 42);
+```
